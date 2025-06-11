@@ -1,1 +1,1 @@
-# simple-faharp
+# simple-fsharp
