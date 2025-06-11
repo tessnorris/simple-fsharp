@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SimpleFSharpCore", "SimpleFSharpCore\SimpleFSharpCore.fsproj", "{1B3A0F3E-F77D-4038-9E24-6A5EDE392E99}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "sfsi", "sfsi\sfsi.fsproj", "{29732BF8-EFBB-4BD0-8DE0-9733E0D42DA5}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "sfsc", "sfsc\sfsc.fsproj", "{9CEF08FB-FC62-4097-85AB-0D436C1398A0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1B3A0F3E-F77D-4038-9E24-6A5EDE392E99}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B3A0F3E-F77D-4038-9E24-6A5EDE392E99}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B3A0F3E-F77D-4038-9E24-6A5EDE392E99}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B3A0F3E-F77D-4038-9E24-6A5EDE392E99}.Release|Any CPU.Build.0 = Release|Any CPU
+		{29732BF8-EFBB-4BD0-8DE0-9733E0D42DA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{29732BF8-EFBB-4BD0-8DE0-9733E0D42DA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{29732BF8-EFBB-4BD0-8DE0-9733E0D42DA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{29732BF8-EFBB-4BD0-8DE0-9733E0D42DA5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9CEF08FB-FC62-4097-85AB-0D436C1398A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CEF08FB-FC62-4097-85AB-0D436C1398A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CEF08FB-FC62-4097-85AB-0D436C1398A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CEF08FB-FC62-4097-85AB-0D436C1398A0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

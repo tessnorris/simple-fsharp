@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TrimMode>link</TrimMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SimpleFSharpCompilerTools.fs" />
+    <Compile Include="SimpleFSharpTransformer.fs" />
+    <Compile Include="SimpleFSharpCompiler.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SimpleFSharpCore\SimpleFSharpCore.fsproj" />
+  </ItemGroup>
+
+</Project>
