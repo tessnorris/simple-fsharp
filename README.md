@@ -1,6 +1,8 @@
 # simple-fsharp
 
-Simple independent implementation of F#, including a compiler (sfsc) and a REPL (sfsi). Currently uses NativeAOT to build standalone native binaries with no dependencies on dotnet runtime.
+![SimpleFSharp logo](assets/logo.png)
+
+Aimple independent implementation of F#, including a compiler (sfsc) and a REPL (sfsi). Currently uses NativeAOT to build standalone native binaries with no dependencies on dotnet runtime.
 
 Currently implements only a portion of the F# language, but the goal is to expand this over time.
 
