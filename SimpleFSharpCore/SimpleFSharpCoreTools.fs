@@ -1,3 +1,6 @@
+// Simple FSharp
+// Copyright (c) 2025 Tessa Norris
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
 module SimpleFSharpCore.CoreTools
 
 type Token =
