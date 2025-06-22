@@ -84,6 +84,7 @@ let lexOperator input pos =
     | '>' :: '=' :: rest -> (GreaterEqualT, rest, 2)
     | '-' :: '>' :: rest -> (Arrow, rest, 2)
     | '=' :: '>' :: rest -> (FatArrow, rest, 2)
+    | '<' :: '-' :: rest -> (ReverseArrow, rest, 2)
     | '&' :: '&' :: rest -> (BooleanAnd, rest, 2)
     | '|' :: '|' :: rest -> (BooleanOr, rest, 2)
     | '+' :: rest -> (Plus, rest, 1)
@@ -180,21 +181,41 @@ let rec tokenizeStringList (input: string list) (pos: Position) (indent: int) : 
   | [] -> ([], [], pos, indent)
   | inputLine :: rest ->
       let lineIndent = getIndent inputLine
-      if lineIndent > indent then // this is an outdent node, don't tokenize it yet
+      if lineIndent < indent then
+        // this is an outdent node, don't tokenize it yet
         ([], input, pos, indent)
       else
-        let (tokens, pos', _) = tokenizeString inputLine pos
-        let (tokenNodes, rest', pos'',  blockIndent) = tokenizeStringList rest pos' lineIndent
-        match tokenNodes with
-        | [] -> // no children or parallel nodes
-            ([{ tokens = tokens; nestedBlock = [] } ], rest',  pos'', lineIndent)
-        | _ when lineIndent < blockIndent -> // remaining lines are child block
-            ([{ tokens = tokens; nestedBlock = tokenNodes } ], rest', pos, lineIndent)
-        | _  -> // remaining lines are same level, add this to the list
-            ({ tokens = tokens; nestedBlock = [] } :: tokenNodes, rest', pos'', lineIndent)
+        let (tokens, pos', _) =
+          tokenizeString inputLine pos
+        match rest with
+        | [] ->
+            ([{ tokens = tokens; nestedBlock = [] } ],
+             [], pos',
+             lineIndent)
+        | nextLine :: rest' ->
+            let nextIndent = getIndent nextLine
+            if nextIndent > lineIndent then
+              let (childNodes, rest'', pos'', _) =
+                tokenizeStringList rest pos' nextIndent
+              let node =
+                { tokens = tokens;
+                  nestedBlock = childNodes }
+              let (nodes, rest''', pos''', _) =
+                tokenizeStringList rest'' pos'' lineIndent
+              (node :: nodes, rest''', pos''', lineIndent)
+            else
+              let node =
+                { tokens = tokens; nestedBlock = [] }
+              let (nodes, rest'', pos'', _) =
+                tokenizeStringList rest pos' lineIndent
+              (node :: nodes, rest'', pos'', lineIndent)
 
-
-
+let tokenizeLines (input: string list) : TokenNode list =
+  let (nodes, _, _, _) = tokenizeStringList
+                           input
+                           { line = 0; column = 0 }
+                           0
+  nodes
 
 
 

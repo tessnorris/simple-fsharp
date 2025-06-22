@@ -34,6 +34,7 @@ type Token =
   | IntOpT
   | Arrow
   | FatArrow
+  | ReverseArrow
   | BooleanNot
   | BooleanAnd
   | BooleanOr
@@ -118,6 +119,7 @@ let printToken token =
   | GreaterEqualT -> "GreaterEqual"
   | Arrow -> "Arrow"
   | FatArrow -> "FatArrow"
+  | ReverseArrow -> "ReverseArrow"
   | BooleanNot -> "BooleanNot"
   | BooleanAnd -> "BooleanAnd"
   | BooleanOr -> "BooleanOr"
@@ -127,3 +129,29 @@ let printToken token =
   | ElseT -> "ElseT"
   | RecT -> "RecT"
   | MutableT -> "MutableT"
+  | WhileT -> "WhileT"
+  | DoT -> "DoT"
+
+let printTokens tokens =
+  let rec loop tokens =
+    match tokens with
+    | [] -> ()
+    | (token, _) :: rest ->
+        printf $"{printToken token}, "
+        loop rest
+
+  loop tokens
+  printfn ""
+
+let rec printTokenNode node depth =
+  let indent = String.replicate depth "  "
+  printf $"{indent}"
+  printTokens node.tokens
+  printTokenNodes node.nestedBlock (depth + 1)
+
+and printTokenNodes nodes depth =
+  match nodes with
+  | [] -> ()
+  | node :: rest ->
+      printTokenNode node depth
+      printTokenNodes rest depth

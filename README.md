@@ -12,7 +12,7 @@ Reimplementing the .Net library is a non-goal. It's huge and object-oriented, an
 
 To build, use the command:
 
-dotnet publish -c Release -r linux-arm64 /p:PublishAot=true
+    dotnet publish -c Release -r linux-arm64 /p:PublishAot=true
 
 Project by Tessa Norris
 located at https://github.com/tessnorris/simple-fsharp

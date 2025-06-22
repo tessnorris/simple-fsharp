@@ -5,19 +5,7 @@ module SimpleFSharpCore.Eval
 
 open SimpleFSharpCore.CoreTools
 open SimpleFSharpCore.SyntaxTree
-
-type Value =
-  | IntV of int
-  | BoolV of bool
-  | StrV of string
-  | Closure of string * Expr * Map<string, Value>
-
-let valueToStr v =
-  match v with
-  | IntV n -> string n
-  | BoolV b -> string b
-  | StrV s -> s
-  | Closure _  -> "<Closure>"
+open SimpleFSharpCore.Environment
 
 let tryParseInt (s: string) =
   match System.Int32.TryParse(s) with
@@ -25,7 +13,7 @@ let tryParseInt (s: string) =
   | (false, _) -> None
 
 
-let rec eval expr env =
+let rec evalExpr expr env : Value * Env =
   match expr with
   | Lit (IntLit n) -> (IntV n, env)
   | Lit (BoolLit b) -> (BoolV b, env)
@@ -33,12 +21,13 @@ let rec eval expr env =
   | InterpolatedStr segments ->
       (StrV(evalInterpolatedSegments segments env), env)
   | Var x ->
-      match Map.tryFind x env with
+      match findVar x env with
       | Some v -> (v, env)
       | None -> failwith $"Undefined variable: {x}"
   | UnaryOp (op, value) ->
-      let v, _ = eval value env
+      let v, _ = evalExpr value env
       match v with
+      | UnitV -> failwith "Cannot perform operation on Unit type"
       | IntV v ->
           let res =
             match op with
@@ -64,9 +53,11 @@ let rec eval expr env =
           (res, env)
       | Closure (_, _, _) -> failwith "Unexpected closure"
   | BinOp (op, left, right) ->
-      let lv, _ = eval left env
-      let rv, _ = eval right env
+      let lv, _ = evalExpr left env
+      let rv, _ = evalExpr right env
       match lv, rv with
+      | UnitV, _
+      | _, UnitV -> failwith "Cannot perform operation on Unit type"
       | IntV l, IntV r ->
           let res =
             match op with
@@ -105,15 +96,20 @@ let rec eval expr env =
 //      let value, _ = eval valueExpr env
 //      let newEnv = Map.add x value env
 //      (value, newEnv)
-  | Lambda (arg, body) -> (Closure (arg, body, env), env)
+  | LambdaExpr { prm = arg; body = body } ->
+      (Closure (arg, body, ref env), env)
+  | IfEx (conds, elseBlk) ->
+      evalConditionalExpr conds elseBlk env
   | Apply (fnExpr, argExpr) ->
-      let fnVal, _ = eval fnExpr env
-      let argVal, _ = eval argExpr env
+      let fnVal, _ = evalExpr fnExpr env
+      let argVal, _ = evalExpr argExpr env
       match fnVal with
       | Closure (param, body, closureEnv) ->
-          let newEnv = Map.add param argVal closureEnv
-          let (res, _) = eval body newEnv
-          (res, env)
+          let newEnv = pushScope !closureEnv
+          let newEnv' = setVar param false argVal newEnv
+          let (v, _) = evalExprBlock body newEnv'
+          // don't need to pop scope because it's closurr scope, not locsl
+          (v, env)
       | _ -> failwith "Tried to apply something that wasn't a function"
 
 
@@ -121,8 +117,84 @@ and evalInterpolatedSegments segments env =
   match segments with
   | [] -> ""
   | InterpolatedExpr ex :: rest ->
-      let (v, env') = eval ex env
+      let (v, env') = evalExpr ex env
       valueToStr(v) + evalInterpolatedSegments rest env
   | StringSegment s :: rest ->
       s + evalInterpolatedSegments rest env
 
+
+and evalStatement stmt env =
+  match stmt with
+  | Let(name, mut, eblk) ->
+      let value, env' = evalExprBlock eblk env
+      (UnitV, setVar name mut value env')
+  | MutableAssign(name, eblk) ->
+      let value, env' = evalExprBlock eblk env
+      (UnitV, assignVar name value env')      
+  | Fn fn ->
+      let prm = fn.lambda.prm
+      let body = fn.lambda.body
+      let placeholderEnv : Env ref = ref []
+      let value = Closure(prm, body, placeholderEnv)
+      let env' = setVar fn.name false value env
+      placeholderEnv := if fn.recursive then env' else env
+      (UnitV, env')
+  | IfSt(conds, maybeElse) ->
+      let v, _ = evalConditionalStmt conds maybeElse env
+      (v, env)
+  | While(condExpr, body) ->
+      let rec loop env =
+        let result, env' = evalExpr condExpr env
+        match result with
+        | BoolV true -> 
+            let _ = evalStmtBlock body.statements (pushScope env')
+            loop env
+        | BoolV false -> (UnitV, env')
+        | _ -> failwith "Condition in while loop must be a boolean"
+      loop env
+  | Expression expr ->
+      let v, env' = evalExpr expr env
+      (v, env')
+
+and evalStmtBlock (stmts: Statement list) env =
+  List.fold (fun (_, envAcc) stmt ->
+    evalStatement stmt envAcc
+  ) (UnitV, env) stmts
+
+and evalExprBlock (blk: ExprBlock) env =
+  let _, env' = evalStmtBlock blk.statements env
+  evalExpr blk.expr env'
+
+and evalConditionalStmt (conds: ConditionalStmt list) maybeElse env : Value * Env =
+  match conds with 
+  | [] ->
+      match maybeElse with
+      | Some block ->
+          let v, _ =
+            evalStmtBlock block.statements (pushScope env)
+          (v, env)
+      | None -> (UnitV, env)
+  | cond :: rest ->
+      let result, env' = evalExpr cond.condition env
+      match result with
+      | BoolV true ->
+          let v, _ =
+            evalStmtBlock cond.sblock.statements (pushScope env')
+          (v, env)
+      | BoolV false -> evalConditionalStmt rest maybeElse env'
+      | _ -> failwith "Condition must evaluate to a boolean"
+
+and evalConditionalExpr (conds: ConditionalExpr list) (exprBlock: ExprBlock) env =
+  match conds with
+  | [] ->
+      let v, _ = evalExprBlock exprBlock (pushScope env)
+      (v, env)
+  | cond :: rest ->
+      let result, env' = evalExpr cond.condition env
+      match result with
+      | BoolV true ->
+          let v, _ =
+            evalExprBlock cond.eblock (pushScope env')
+          (v, env)
+      | BoolV false -> evalConditionalExpr rest exprBlock env'
+      | _ -> failwith "Condition must evaluate to a boolean"

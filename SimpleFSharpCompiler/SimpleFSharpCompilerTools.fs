@@ -128,3 +128,51 @@ let concatStrings ir s1ptr s2ptr outPtr =
   emitIR ir $"%%u{endptr} = getelementptr i8, i8* %%{outPtr}, i64 %%u{total2}"
   emitIR ir $"store i8 0, i8* %%u{endptr}"
 
+
+let rec printTfsExpr expr d =
+  let indent = makeIndent d
+  match expr with
+  | Const (v, r) ->
+      printfn $"{indent}Const: to {r}"
+      match v with
+      | VInt i -> printfn $"{makeIndent (d+1)}VInt: {i}"
+      | VBool b -> printfn $"{makeIndent (d+1)}VBool: {b}"
+      | VStr (sid, len) -> printfn $"{makeIndent (d+1)}VStr, id: {sid}, len: {len}"
+      | VVar s -> printfn $"{makeIndent (d+1)}VVar: {s}"
+      | VFunc f ->
+          printfn $"{makeIndent (d+1)}VFunc:"
+          match f with
+          | FLambda id -> printfn $"{makeIndent (d+2)}FLambda: {id}"
+          | FUser s -> printfn $"{makeIndent (d+2)}FUser: {s}"
+          | FSystem s -> printfn $"{makeIndent (d+2)}FSystem: {s}"
+          | FDynamic ex ->
+              printfn $"{makeIndent (d+2)}FDynamic:"
+              printTfsExpr ex (d + 3)
+  | Load (v, r) -> printfn $"{indent}Load: {v} to {r}"
+  | Store (v, ex) ->
+      printfn $"{indent}Store: \"{v}\""
+      printTfsExpr ex (d + 1)
+  | Unary (op, ex, r) ->
+      printfn $"{indent}UnaryOp: {op} to {r}"
+      printTfsExpr ex (d + 1)
+  | Bin (op, ex1, ex2, r) ->
+      printfn $"{indent}BinOp: {op} to {r}"
+      printTfsExpr ex1 (d + 1)
+      printTfsExpr ex2 (d + 1)
+  | Call (f, exps, r) ->
+      printfn $"{indent}Call: to {r}"
+      printfn $"{makeIndent (d+1)}VFunc:"
+      match f with
+      | FLambda id -> printfn $"{makeIndent (d+2)}FLambda: {id}"
+      | FUser s -> printfn $"{makeIndent (d+2)}FUser: {s}"
+      | FSystem s -> printfn $"{makeIndent (d+2)}FSystem: {s}"
+      | FDynamic ex ->
+          printfn $"{makeIndent (d+2)}FDynamic:"
+          printTfsExpr ex (d + 3)
+      List.iter (fun ex -> printTfsExpr ex (d + 1)) exps
+  | MakeClosure (l, vals) ->
+      printfn $"{indent}MakeClosure: Lambda {l}"
+      List.iter (fun ex -> printTfsExpr ex (d + 1)) vals
+  | GetClosureEnv reg ->
+      printfn $"{indent}GetClosureEnv: {reg}"
+  | _ -> failwith "Unimplemented expression type"

@@ -5,45 +5,50 @@ open SimpleFSharpCore.CoreTools
 open SimpleFSharpCore.Lexer
 open SimpleFSharpCore.SyntaxTree
 open SimpleFSharpCore.Parser
+open SimpleFSharpCore.Environment
 open SimpleFSharpCore.Eval
 
-let rec loop env debugMode =
-  printf "tfsi> "
+let rec repl env debugMode =
+  printf ">>> "
   let input = System.Console.ReadLine()
-  match input with
-  | ":q" -> 0
-  | _ ->
-      try
-        let pos = newPosition ()
-        let (tokens, _) = tokenizeString input pos
-        if debugMode then
-          printfn "Tokens: %A" tokens
-        let expr = parse tokens pos
-        if debugMode then
-          printfn "Expression:"
-          printExpr expr 0
-        let result, newEnv = eval expr env
-        match result with
-        | IntV n -> printfn $"{n}"
-        | BoolV b -> printfn $"{b}"
-        | StrV s -> printfn $"\"{s}\""
-        | Closure (args, body, env') ->
-            printfn "Closure with"
-            printfn "  args: %A" args
-            printfn "  body: %A" body
-            printfn "  env keys: %A" (Map.toList env' |> List.map fst)
-        loop newEnv debugMode
-      with e ->
-        printfn "Error: %s" e.Message
-        loop env debugMode
+  readMultiline [input] env debugMode
 
+and readMultiline lines env debugMode =
+  match lines with
+  | line :: rest when line.TrimEnd().EndsWith(";;") ->
+    let cleanedInput = line.Substring(0, line.Length - 2)
+    if cleanedInput = "#quit" then
+      ()
+    else
+      try
+        let orderedLines = List.rev (cleanedInput :: rest)
+        let nodes = tokenizeLines orderedLines
+        if debugMode then
+          printfn "Tokens:"
+          printTokenNodes nodes 0
+        let block = parse nodes
+        if debugMode then
+          printfn "SyntaxTree:"
+          printStmtBlock block 0
+        let (result, env') =
+          evalStmtBlock block.statements env
+        printfn $"{valueToStr result}"
+        repl env' debugMode
+      with ex ->
+        printfn "Error: %s" ex.Message
+        repl env debugMode     
+  | _ ->
+    printf "- "
+    let nextLine = System.Console.ReadLine()
+    readMultiline (nextLine :: lines) env debugMode
 
 [<EntryPoint>]
 let main argv =
   printfn "Welcome to Tiny F# REPL"
-  let debugMode = argv |> Array.contains "-debug"
+  let debugMode = argv |> Array.contains "--debug"
   if debugMode then
     printfn "Running in debug mode"
   else
-    printfn ":q to quit"
-  loop Map.empty debugMode
+    printfn "#quit;; to quit"
+  repl [Map.empty] debugMode
+  0
