@@ -64,27 +64,18 @@ type Expr =
   | UnaryOp of UnaryOpKind * Expr
   | BinOp of BinOpKind * Expr * Expr
   | LambdaExpr of Lambda
-  | IfEx of ConditionalExpr list * ExprBlock
   | Apply of Expr * Expr
+  | Let of string * bool * Expr
+  | MutableAssign of string * Expr
+  | Fn of Function
+  | If of Conditional list * Expr option
+  | While of Expr * Expr
+  | Block of Expr list
 
 and Lambda = {
   prm: string
-  body: ExprBlock
+  body: Expr
 }
-
-and InterpolatedSegment =
-  | InterpolatedExpr of Expr
-  | StringSegment of string
-
-
-// AST containers
-and Statement =
-  | Let of string * bool * ExprBlock
-  | MutableAssign of string * ExprBlock
-  | Fn of Function
-  | IfSt of ConditionalStmt list * StatmtBlock Option
-  | While of Expr * StatmtBlock
-  | Expression of Expr
 
 and Function = {
   name: string
@@ -92,23 +83,13 @@ and Function = {
   lambda: Lambda
 }
 
-and ExprBlock = {
-  statements: Statement list
+and InterpolatedSegment =
+  | InterpolatedExpr of Expr
+  | StringSegment of string
+
+and Conditional = {
+  condition: Expr
   expr: Expr
-}
-
-and StatmtBlock = {
-  statements: Statement list
-}
-
-and ConditionalExpr = {
-  condition: Expr
-  eblock: ExprBlock
-}
-
-and ConditionalStmt = {
-  condition: Expr
-  sblock: StatmtBlock
 }
 
 // Printing the AST
@@ -159,18 +140,38 @@ let rec printExpr expr depth =
       printfn $"{indent}BinOp: {printBinOp op}"
       printExpr ex1 (depth + 1)
       printExpr ex2 (depth + 1)
-  | LambdaExpr { prm = arg; body = eb } ->
+  | LambdaExpr { prm = arg; body = expr' } ->
       printfn $"{indent}Lambda: {arg}"
-      printExprBlock eb.statements eb.expr (depth + 1)
-  | IfEx (conds, eb) ->
+      printExpr expr' (depth + 1)
+  | If (conds, maybeElse) ->
       printfn "If"
-      printConditionalExpr conds true depth
-      printfn "Else"
-      printExprBlock eb.statements eb.expr (depth + 1)
+      printConditional conds true depth
+      match maybeElse with
+      | Some(expr') ->
+          printfn "Else"
+          printExpr expr' (depth + 1)
+      | None -> ()
   | Apply (fn, param) ->
       printfn $"{indent}Apply:"
       printExpr fn (depth + 1)
       printExpr param (depth + 1)
+  | Let (var, mut, expr') ->
+      if mut then
+        printfn $"{indent}Let (mutable): {var}"
+      else
+        printfn $"{indent}Let: {var}"
+      printExpr expr' (depth + 1)
+  | MutableAssign (var, expr) ->
+      printfn $"{indent}Mutable assign: {var}"
+      printExpr expr (depth + 1)
+  | Fn f ->
+      printfn $"{indent}Function: {f.name}"
+      printFunction f (depth + 1)
+  | While (expr, b) ->
+      printfn $"{indent}While:"
+      printWhile expr b depth
+  | Block b ->
+      printBlock b depth
 
 and printInterpolatedSegments segments depth =
   let indent = String.replicate depth "  "
@@ -184,58 +185,21 @@ and printInterpolatedSegments segments depth =
       printfn $"{indent}Interpolated String Segment: {s}"
       printInterpolatedSegments rest depth
 
-and printStatement statement depth =
-  let indent = String.replicate depth "  "
-  match statement with
-  | Let (var, mut, eblk) ->
-      if mut then
-        printfn $"{indent}Let (mutable): {var}"
-      else
-        printfn $"{indent}Let: {var}"
-      printExprBlock eblk.statements eblk.expr (depth + 1)
-  | MutableAssign (var, eblk) ->
-      printfn $"{indent}Mutable assign: {var}"
-      printExprBlock eblk.statements eblk.expr (depth + 1)
-  | Fn f ->
-      printfn $"{indent}Function: {f.name}"
-      printFunction f (depth + 1)
-  | IfSt (conds, maybeElse) ->
-      printfn $"{indent}If:"
-      printConditionalStmt conds true depth
-      match maybeElse with
-      | Some(b) ->
-          printfn $"{indent}Else:"
-          printStmtBlock b (depth + 1)
-      | None -> ()
-  | While (expr, b) ->
-      printfn $"{indent}While:"
-      printWhile expr b depth
-  | Expression expr ->
-      printfn $"{indent}Expression:"
-      printExpr expr (depth + 1)
-
 and printFunction f depth =
   let indent = String.replicate depth "  "
   printf $"{indent}Recursive: {f.recursive}"
   printfn $"{indent}Param: {f.lambda.prm}"
   printf $"{indent}Body:"
-  printExprBlock f.lambda.body.statements f.lambda.body.expr (depth + 1)
+  printExpr f.lambda.body (depth + 1)
 
-and printStatements sts depth =
-  match sts with
+and printBlock exprs depth =
+  match exprs with
   | [] -> ()
-  | st :: rest ->
-      printStatement st depth
-      printStatements rest depth
+  | expr :: rest ->
+      printExpr expr depth
+      printBlock rest depth
 
-and printStmtBlock block depth =
-  printStatements block.statements depth
-
-and printExprBlock statements expr depth =
-  printStatements statements depth
-  printExpr expr depth
-
-and printConditionalStmt conds first depth =
+and printConditional conds first depth =
   match conds with
   | [] -> ()
   | cond :: rest ->
@@ -243,22 +207,11 @@ and printConditionalStmt conds first depth =
       if first then () else printfn $"{indent}Elif:"
       printExpr cond.condition (depth + 1)
       printfn "Then:"
-      printStmtBlock cond.sblock (depth + 1)
-      printConditionalStmt rest false depth
-
-and printConditionalExpr conds first depth =
-  match conds with
-  | [] -> ()
-  | cond :: rest ->
-      let indent = String.replicate depth "  "
-      if first then () else printfn $"{indent}Elif:"
-      printExpr cond.condition (depth + 1)
-      printfn "Then:"
-      printExprBlock cond.eblock.statements cond.eblock.expr (depth + 1)
-      printConditionalExpr rest false depth
+      printExpr cond.expr (depth + 1)
+      printConditional rest false depth
 
 and printWhile expr block depth =
       let indent = String.replicate depth "  "
       printExpr expr (depth + 1)
       printfn "Do:"
-      printStmtBlock block (depth + 1)
+      printExpr block (depth + 1)

@@ -26,12 +26,12 @@ and readMultiline lines env debugMode =
         if debugMode then
           printfn "Tokens:"
           printTokenNodes nodes 0
-        let block = parse nodes
+        let exprs = parse nodes
         if debugMode then
           printfn "SyntaxTree:"
-          printStmtBlock block 0
+          printBlock exprs 0
         let (result, env') =
-          evalStmtBlock block.statements env
+          evalBlock exprs env
         printfn $"{valueToStr result}"
         repl env' debugMode
       with ex ->

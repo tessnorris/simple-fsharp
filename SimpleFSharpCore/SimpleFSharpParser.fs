@@ -29,14 +29,17 @@ let startsExpr = function
   | LParen | InterpolatedStart -> true
   | _ -> false
 
-let rec makeNestedLambda paramNames bodyBlock =
+let isUnaryOnly = function
+  | Minus | BooleanNot | StringOpT | IntOpT -> true
+  | _ -> false
+
+let rec makeNestedLambda paramNames body =
   match paramNames with
   | [] -> failwith "Lambda must have at least one parameter"
-  | [p] -> LambdaExpr { prm = p; body = bodyBlock }
+  | [p] -> LambdaExpr { prm = p; body = body }
   | p :: ps ->
-      let inner = makeNestedLambda ps bodyBlock
-      let block = { statements = []; expr = inner }
-      LambdaExpr { prm = p; body = block }
+      let inner = makeNestedLambda ps body
+      LambdaExpr { prm = p; body = inner }
 
 let rec parseParamList tokens =
   match tokens with
@@ -80,10 +83,12 @@ let rec parseExpr (tokens: (Token*Position) list) (block: TokenNode list)  (minP
 
   parseInfixRest prefix rest block minPrec
 
+
+    // parse Apply
 and parseInfixRest left tokens block minPrec : Expr * (Token*Position) list =
     match tokens with
     | [] -> (left, [])
-    | (next, _) :: _ when startsExpr next ->
+    | (next, _) :: _ when startsExpr next && not (isUnaryOnly next)->
         if applyPrecedence > minPrec then
             let arg, rest' = parseExpr tokens block applyPrecedence
             parseInfixRest (Apply(left, arg)) rest' block minPrec
@@ -108,16 +113,15 @@ and parseLambda tokens nestedBlock =
       match rest' with
       | [(Arrow, _); (EOF, _)] ->
           let body =
-            parseExprBlock nestedBlock
+            parseBlock nestedBlock
           let lambdaExpr =
             makeNestedLambda paramNames body
           (lambdaExpr, [])
       | (Arrow, _) :: rest'' ->
           let (expr, rest''') =
               parseExpr rest'' nestedBlock lowPrecedence
-          let body = { statements = []; expr = expr }
           let lambdaExpr =
-            makeNestedLambda paramNames body
+            makeNestedLambda paramNames expr
           (lambdaExpr, rest''')
       | _ -> failwith "Expected '->' in lambda declaration"
   | _ -> failwith "Expected 'fun' at start of lambda"
@@ -142,89 +146,96 @@ and parseInterpolatedString (tokens: (Token*Position) list) : Expr * (Token*Posi
   let (segments, rest) = loop tokens
   (InterpolatedStr(segments), rest)
 
-and parseExprBlock (nodes: TokenNode list) : ExprBlock =
+and parseBlock (nodes: TokenNode list) : Expr =
+  match nodes with
+  | [] -> Block([])
+  | _ ->
+      let expr, remaining = parseNext nodes
+      let rest = parseBlock remaining
+      match rest with
+      | Block (exprs) -> Block(expr :: exprs)
+      | _ -> Block([expr; rest])
+    
+and parseNext nodes : Expr * TokenNode list =
   match nodes with
   | [] -> failwith "Expected expression"
-  | [tn] ->
+  | tn :: remaining ->
       match tn.tokens with
-      | (IfT, _) :: _ ->
-          let expr, _ = parseIfEx nodes
-          { statements = []; expr = expr }
+      | (IfT, _) :: _ -> parseIf nodes
+      | (LetT, _) :: _ -> parseLet nodes
+      | (Ident s, _) :: (ReverseArrow, _) :: rest ->
+          let node' =
+            { tokens = rest;
+              nestedBlock = tn.nestedBlock }
+          let expr, remaining' =
+            parseNext (node' :: remaining)
+          (MutableAssign(s, expr), remaining')
+      | (WhileT, _) :: rest ->
+          ((parseWhile tn), remaining)
       | _ ->
           let expr, _ =
             parseExpr tn.tokens tn.nestedBlock lowPrecedence
-          { statements = []; expr = expr }
-  | tn :: remaining ->
-      match tn.tokens with
-      | (IfT, _) :: _ ->
-          let expr, remaining' = parseIfEx nodes
-          let stmt = Expression(expr)
-          let blk = parseExprBlock remaining'
-          { blk with statements = stmt :: blk.statements }
-      | _ ->
-          let stmt = parseStatement tn
-          let blk = parseExprBlock remaining
-          { blk with statements = stmt :: blk.statements }
+          (expr, remaining)
 
-and parseIfEx (nodes: TokenNode list) : Expr * TokenNode list =
+and parseIf (nodes: TokenNode list) : Expr * TokenNode list =
   match nodes with
   | [] -> failwith "Unexpected expression"
   | tn :: remaining ->
       match tn.tokens with
       | (IfT, _) :: rest ->
           // construct the if clause
-          printfn "pwrsing if"
           let condExpr, rest' =
             parseExpr rest [] lowPrecedence
           let thenBlock, rest'', isExpr =
-            parseThenExpr rest' tn.nestedBlock
+            parseThen rest' tn.nestedBlock
           let cond =
-            { condition = condExpr; eblock = thenBlock }
-          // cpnstruct the elif and else clauses
+            { condition = condExpr; expr = thenBlock }
+          // construct the elif and else clauses
           match isExpr with
           | true ->
               let conds, tokens =
                 parseElIfExpr rest''
-              let elseBlock, tokens' =
-                parseElseExpr tokens tn.nestedBlock
-              (IfEx(cond :: conds, elseBlock), remaining)
+              let maybeElse, tokens' =
+                parseElse tokens tn.nestedBlock
+              (If(cond :: conds, maybeElse), remaining)
           | false ->
               let conds, remaining' = 
                 parseElIfBlock remaining
               match remaining' with
-              | tn' :: nodes ->
-                  let elseBlock, tokens' =
-                    parseElseExpr tn'.tokens tn'.nestedBlock
-                  (IfEx(cond :: conds, elseBlock), nodes)
-              | _ -> failwith "Missing else in if expression"
-      | _ -> failwith "Unexpected token"
+              | [] ->
+                  (If(cond :: conds, None), [])
+              | tn' :: remaining'' ->
+                let maybeElse, _ =
+                  parseElse tn'.tokens tn'.nestedBlock
+                (If(cond :: conds, maybeElse), remaining'')
+      | _ -> failwith "Unexpected token in if"
 
-and parseThenExpr tokens nestedBlock : ExprBlock * (Token*Position) list * bool =
+and parseThen tokens nestedBlock : Expr * (Token*Position) list * bool =
   match tokens with
   | [(ThenT, _); (EOF, _)] ->
-      ((parseExprBlock nestedBlock), [], false)
+      ((parseBlock nestedBlock), [], false)
   | (ThenT, _) :: rest ->
       let thenExpr, rest' =
         parseExpr rest nestedBlock lowPrecedence
-      ({ statements = []; expr = thenExpr }, rest', true)
+      (thenExpr, rest', true)
   | (token, _) :: _ ->
       failwith $"Expected 'then' after conditional, received '{printToken token}'"
   | [] -> failwith "Missing 'then' after conditional"
 
-and parseElIfExpr tokens : (ConditionalExpr list) * (Token*Position) list =
+and parseElIfExpr tokens : Conditional list * (Token*Position) list =
   match tokens with
   | (ElIfT, _) :: rest ->
       let condExpr, rest' =
         parseExpr rest [] lowPrecedence
       let thenBlock, rest'', _ =
-        parseThenExpr rest' []
+        parseThen rest' []
       let cond =
-        { condition = condExpr; eblock = thenBlock }
+        { condition = condExpr; expr = thenBlock }
       let (conds, rest''') = parseElIfExpr rest''
       (cond :: conds, rest''')
   | _ -> ([], tokens)
 
-and parseElIfBlock (nodes: TokenNode list) : ConditionalExpr list * TokenNode list =
+and parseElIfBlock (nodes: TokenNode list) : Conditional list * TokenNode list =
   match nodes with
   | [] -> ([], [])
   | tn :: remaining ->
@@ -233,169 +244,110 @@ and parseElIfBlock (nodes: TokenNode list) : ConditionalExpr list * TokenNode li
           let condExpr, rest' =
             parseExpr rest [] lowPrecedence
           let thenBlock, rest'', _ =
-            parseThenExpr rest' tn.nestedBlock
-          let cond = { condition = condExpr; eblock = thenBlock }
+            parseThen rest' tn.nestedBlock
+          let cond = { condition = condExpr; expr = thenBlock }
           let (conds, nodes) = parseElIfBlock remaining
           (cond :: conds, nodes)
       | _ -> ([], nodes)
 
-and parseElseExpr tokens nestedBlock : ExprBlock * (Token*Position) list =
+and parseElse tokens nestedBlock : Expr option * (Token*Position) list =
   match tokens with
   | [(ElseT, _); (EOF, _)] ->
-      ((parseExprBlock nestedBlock), [])
+      (Some(parseBlock nestedBlock), [])
   | (ElseT, _) :: rest ->
       let elseExpr, rest' =
         parseExpr rest nestedBlock lowPrecedence
-      ({ statements = []; expr = elseExpr }, rest')
-  | (token, _) :: _ ->
-      failwith $"Expected 'else' after conditional, received '{printToken token}'"
-  | [] -> failwith "Missing 'else' after conditional"
+      (Some(elseExpr), rest')
+  | _ -> (None, tokens)
 
-and parseStmtBlock (nodes: TokenNode list) =
+and parseLet nodes : Expr * TokenNode list =
   match nodes with
-  | [] -> { statements = [] }
-  | tn :: rest ->
+  | [] -> failwith "Expected 'let'"
+  | tn :: remaining ->
       match tn.tokens with
-      | (IfT, _) :: _ ->
-          let (stmt, rest') = parseIfStatement tn rest
-          let block = parseStmtBlock rest'
-          { statements = stmt :: block.statements }
-      | _ ->
-          let stmt = parseStatement tn
-          let block = parseStmtBlock rest
-          { statements = stmt :: block.statements }
-
-and parseIfStatement (tn: TokenNode) (rest: TokenNode list) : Statement * TokenNode list =
-  let firstCond = parseConditional tn.tokens tn.nestedBlock
-  let rec collectElifs tokens nodes acc =
-    match nodes with
-    | [] -> (List.rev acc, None, [])
-    | tn' :: rest' ->
-        match tn'.tokens with
-        | (ElIfT, _) :: tks ->
-            let cond =
-              parseConditional tks tn'.nestedBlock
-            collectElifs tokens rest' (cond :: acc)
-        | (ElseT, _) :: _ ->
-            let elseBlock = parseStmtBlock tn'.nestedBlock
-            (List.rev acc, Some elseBlock, rest')
-        | _ -> (List.rev acc, None, nodes)
-
-  let (elifs, elseOpt, rest') =
-      collectElifs [] rest [firstCond]
-  (IfSt(elifs, elseOpt), rest')
-
-and parseConditional (tokens: (Token * Position) list) (block: TokenNode list) : ConditionalStmt =
-  match tokens with
-  | (IfT, _) :: rest
-  | (ElIfT, _) :: rest ->
-      let (condExpr, afterCond) =
-          parseExpr rest block lowPrecedence
-      match afterCond with
-      | (ThenT, _) :: (EOF, _) :: _ ->
-          let body = parseStmtBlock block
-          { condition = condExpr; sblock = body }
-      | (ThenT, _) :: rest' ->
-          let (bodyExpr, rest'') =
-              parseExpr rest' block lowPrecedence
-          let block =
-              { statements = [Expression(bodyExpr)] }
-          { condition = condExpr; sblock = block }
-      | _ -> failwith "Expected 'then'"
-  | _ -> failwith "Expected 'if' or 'elif'"
-
-
-and parseStatement (node: TokenNode) : Statement =
-  match node.tokens with
-  | (LetT, _) :: _ ->
-      parseLet node.tokens node.nestedBlock
-  | (Ident s, _) :: (ReverseArrow, _) :: rest ->
-      let node' =
-        { tokens = rest; nestedBlock = node.nestedBlock }
-      let eblk = parseExprBlock [node']
-      MutableAssign(s, eblk)      
-  | (WhileT, _) :: rest ->
-      parseWhile node.tokens node.nestedBlock
-  | _ ->
-      let (expr, rest) =
-        parseExpr node.tokens node.nestedBlock lowPrecedence
-      Expression(expr)
-
-and parseLet tokens nestedBlock : Statement =
-  match tokens with
-    // recursive functions
-  | (LetT, _) :: (RecT, _) :: rest ->
-      let (vars, rest') = parseParamList rest
-      match vars with
-      | [] -> failwith "Expected parameters for function"
-      | name :: prms ->
-          let fn =
-            parseFunction name prms true rest' nestedBlock
-          Fn(fn)
-  | (LetT, _) :: (MutableT, _) :: (Ident name, _) :: (EqualsT, _) :: rest ->
-      let node = { tokens = rest; nestedBlock = nestedBlock }
-      let eblk = parseExprBlock [node]
-      Let(name, true, eblk)
-  | (LetT, _) :: (Ident name, _) :: (EqualsT, _) :: rest ->
-      let node = { tokens = rest; nestedBlock = nestedBlock }
-      let eblk = parseExprBlock [node]
-      Let(name, false, eblk)
-  | (LetT, _) :: rest ->
-      let (vars, rest') = parseParamList rest
-      match vars with
-      | [] -> failwith "Expected params for function"
-      | name :: prms ->
-          let fn =
-            parseFunction name prms false rest' nestedBlock
-          Fn(fn)
-  | _ -> failwith "Unexpected token in let statement"
+      | (LetT, _) :: (RecT, _) :: rest ->
+          let (vars, rest') = parseParamList rest
+          match vars with
+          | name :: p1 :: prest ->
+              let prms = p1 :: prest
+              let fn =
+                parseFunction name prms true rest' tn.nestedBlock
+              (Fn(fn), remaining)
+          | _ ->
+              failwith "Expected parameters for function"
+      | (LetT, _) :: (MutableT, _) :: (Ident name, _) :: (EqualsT, _) :: (EOF, _) :: [] ->
+          let expr = parseBlock tn.nestedBlock
+          (Let(name, true, expr), remaining)
+      | (LetT, _) :: (MutableT, _) :: (Ident name, _) :: (EqualsT, _) :: rest ->
+          let node =
+            { tokens = rest; nestedBlock = tn.nestedBlock }
+          let expr, remaining' =
+            parseNext (node :: remaining)
+          (Let(name, true, expr), remaining')
+      | (LetT, _) :: (Ident name, _) :: (EqualsT, _) :: (EOF, _) :: [] ->
+          let expr = parseBlock tn.nestedBlock
+          (Let(name, false, expr), remaining)
+      | (LetT, _) :: (Ident name, _) :: (EqualsT, _) :: rest ->
+          let node =
+            { tokens = rest; nestedBlock = tn.nestedBlock }
+          let expr, remaining' =
+            parseNext (node :: remaining)
+          (Let(name, false, expr), remaining')
+      | (LetT, _) :: rest ->
+          let (vars, rest') = parseParamList rest
+          match vars with
+          | name :: p1 :: prest ->
+              let prms = p1 :: prest
+              let fn =
+                parseFunction name prms false rest' tn.nestedBlock
+              (Fn(fn), remaining)
+          | _ -> failwith "Expected params for function"
+      | _ -> failwith "Unexpected token in let statement"
 
 and parseFunction name prms isRecursive tokens block : Function =
-  printfn "parsing function"
-  printTokens tokens
   match prms with
   | p :: p' :: rest ->
       let fn =
         parseFunction name (p' :: rest) isRecursive tokens block
-      let block =
-        { statements = []; expr = LambdaExpr(fn.lambda) }
-      let lambda = { prm = p; body = block }
+      let lambda =
+        { prm = p; body = LambdaExpr(fn.lambda) }
       { fn with lambda = lambda }
   | p :: rest ->
       // TODO: handle tokens instesd of block
       let block' =
         match tokens with
         | [(EqualsT, _); (EOF, _)] ->
-            parseExprBlock block
+            parseBlock block
         | (EqualsT, _) :: rest' ->
             let node = { tokens = rest'; nestedBlock = block }
-            parseExprBlock [node]
+            parseBlock [node]
         | _ -> failwith "Expected '=' in function definition"
       let lambda = { prm = p; body = block' }
       { name = name; recursive = isRecursive; lambda = lambda }
   | _ -> failwith "Missing function parameters"
 
-and parseWhile (tokens: (Token * Position) list) (block: TokenNode list) : Statement =
-  match tokens with
+and parseWhile node : Expr =
+  match node.tokens with
   | (WhileT, _) :: rest ->
       let (condExpr, afterCond) =
-          parseExpr rest block lowPrecedence
+        parseExpr rest [] lowPrecedence
       match afterCond with
       | [(DoT, _); (EOF, _)] -> 
-          // Expect a nested block for the while-body
-          let body = parseStmtBlock block
+          let body = parseBlock node.nestedBlock
           While(condExpr, body)      
       | (DoT, _) :: rest' ->
-          // Inline do expression (rare but possible)
           let (expr, _) =
-              parseExpr rest' block lowPrecedence
-          let body = { statements = [Expression(expr)] }
-          While(condExpr, body)
+            parseExpr rest' node.nestedBlock lowPrecedence
+          While(condExpr, expr)
       | _ ->
           failwith "Expected 'do' after while condition"
-
   | _ -> failwith "Expected 'while'"
 
-let parse (nodes: TokenNode list) : StatmtBlock =
-  parseStmtBlock nodes
+let rec parse (nodes: TokenNode list) : Expr list =
+  match nodes with
+  | [] -> []
+  | _ ->
+      let expr, remaining = parseNext nodes
+      let rest = parse remaining
+      expr :: rest
 
