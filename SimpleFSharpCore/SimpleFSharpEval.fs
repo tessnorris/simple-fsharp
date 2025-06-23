@@ -18,6 +18,7 @@ let rec eval expr env : Value * Env =
   | Lit (IntLit n) -> (IntV n, env)
   | Lit (BoolLit b) -> (BoolV b, env)
   | Lit (StringLit s) -> (StrV s, env)
+  | Lit UnitLit -> (UnitV, env)
   | InterpolatedStr segments ->
       (StrV(evalInterpolatedSegments segments env), env)
   | Var x ->

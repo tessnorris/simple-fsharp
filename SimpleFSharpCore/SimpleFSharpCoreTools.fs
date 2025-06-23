@@ -46,6 +46,7 @@ type Token =
   | MutableT
   | WhileT
   | DoT
+  | UnitT
 
 type Position = {
   line: int
@@ -131,6 +132,7 @@ let printToken token =
   | MutableT -> "MutableT"
   | WhileT -> "WhileT"
   | DoT -> "DoT"
+  | UnitT -> "UnitT"
 
 let printTokens tokens =
   let rec loop tokens =

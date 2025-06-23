@@ -20,7 +20,7 @@ type BinOpKind =
   | OpNum of BinOpNumKind
   | OpBool of BinOpBoolKind
   | OpCompar of BinOpComparKind
-  | Add                             // could be numeric or string concat
+  | Add   // could be numeric or string concat
 
 type UnaryOpKind = Neg | BoolNot | StringOp | IntOp
 
@@ -54,12 +54,12 @@ type LiteralValue =
   | IntLit of int
   | StringLit of string
   | BoolLit of bool
+  | UnitLit
 
 
 // AST expression
 type Expr =
   | Lit of LiteralValue
-  | InterpolatedStr of InterpolatedSegment list
   | Var of string
   | UnaryOp of UnaryOpKind * Expr
   | BinOp of BinOpKind * Expr * Expr
@@ -70,6 +70,7 @@ type Expr =
   | Fn of Function
   | If of Conditional list * Expr option
   | While of Expr * Expr
+  | InterpolatedStr of InterpolatedSegment list
   | Block of Expr list
 
 and Lambda = {
@@ -129,6 +130,7 @@ let rec printExpr expr depth =
   | Lit (IntLit i) -> printfn $"{indent}Int {i}"
   | Lit (BoolLit b) -> printfn $"{indent}Bool {b}"
   | Lit (StringLit s) -> printfn $"{indent}String: \"{s}\""
+  | Lit UnitLit -> printfn $"{indent}Unit"
   | InterpolatedStr segments ->
       printfn $"{indent}InterpolatedString"
       printInterpolatedSegments segments (depth + 1)

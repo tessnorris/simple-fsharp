@@ -134,11 +134,17 @@ let rec tokenize (input: char list) (pos: Position) (interpolated: bool) : (Toke
   | '"' :: rest -> processToken lexString rest pos interpolated
   | c :: rest when isWhitespace c ->
       tokenize rest (advance pos) interpolated
+  | '(' :: ')' :: rest ->
+     let (tokens, remainder, pos') =
+       tokenize rest (advanceN pos 2) interpolated
+     ((UnitT, pos) :: tokens, remainder, pos')
   | '(' :: rest ->
-      let (tokens, remainder, pos') = tokenize rest (advance pos) interpolated
-      ((LParen, pos) :: tokens, remainder, pos')
+     let (tokens, remainder, pos') =
+       tokenize rest (advance pos) interpolated
+     ((LParen, pos) :: tokens, remainder, pos')
   | ')' :: rest ->
-      let (tokens, remainder, pos') = tokenize rest (advance pos) interpolated
+      let (tokens, remainder, pos') =
+        tokenize rest (advance pos) interpolated
       ((RParen, pos) :: tokens, remainder, pos')
   | '$' :: '"' :: rest when not interpolated ->
       let (interpol, remainder, pos') = lexInterpolatedString rest (advanceN pos 2)

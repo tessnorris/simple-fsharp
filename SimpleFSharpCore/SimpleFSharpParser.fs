@@ -58,6 +58,7 @@ let rec parseExpr (tokens: (Token*Position) list) (block: TokenNode list)  (minP
     | (IntT n, _) :: rest -> (Lit (IntLit n), rest)
     | (BoolT b, _) :: rest -> (Lit (BoolLit b), rest)
     | (StrT s, _) :: rest -> (Lit (StringLit s), rest)
+    | (UnitT, _) :: rest -> (Lit UnitLit, rest)
     | (Ident s, _) :: rest -> (Var s, rest)
     | (Minus, _) :: rest ->
         let expr, rest' = parseExpr rest block unaryPrecedence

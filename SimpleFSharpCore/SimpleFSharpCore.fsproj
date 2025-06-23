@@ -12,6 +12,7 @@
     <Compile Include="SimpleFSharpLexer.fs" />
     <Compile Include="SimpleFSharpSyntaxTree.fs" />
     <Compile Include="SimpleFSharpParser.fs" />
+    <Compile Include="SimpleFSharpInferrer.fs" />
     <Compile Include="SimpleFSharpEnv.fs" />
     <Compile Include="SimpleFSharpEval.fs" />
   </ItemGroup>
